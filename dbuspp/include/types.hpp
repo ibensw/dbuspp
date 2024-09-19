@@ -37,6 +37,10 @@ class ObjectPath : public std::string {
   public:
     using std::string::string;
 };
+class Signature : public std::string {
+  public:
+    using std::string::string;
+};
 
 template <typename... T> using Struct = std::tuple<T...>;
 template <typename... T> using Variant = std::variant<T...>;
@@ -120,6 +124,7 @@ template <> struct Parser<type::String> : StringParserHelper<type::String, DBUS_
 template <> struct Parser<const char *> : StringParserHelper<type::String, DBUS_TYPE_STRING> {};
 template <> struct Parser<std::string_view> : StringParserHelper<type::String, DBUS_TYPE_STRING> {};
 template <> struct Parser<type::ObjectPath> : StringParserHelper<type::ObjectPath, DBUS_TYPE_OBJECT_PATH> {};
+template <> struct Parser<type::Signature> : StringParserHelper<type::ObjectPath, DBUS_TYPE_SIGNATURE> {};
 
 // template <typename T> struct Parser<type::String> : StringParserHelper<type::String, DBUS_TYPE_STRING> {};
 
