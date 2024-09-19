@@ -71,31 +71,6 @@ class DBus {
       private:
         MessageType reply;
     };
-    class Properties {
-        friend class DBus;
-
-      public:
-        template <typename T> [[nodiscard]] T get(std::string_view interface, std::string_view property) {
-            return std::get<T>(dbus->call<std::variant<T>>(destination, path, DBUS_PROPS, "Get", interface, property));
-        }
-
-        template <typename T> [[nodiscard]] type::Dict<T> getAll(std::string_view interface) {
-            return dbus->call<type::Dict<T>>(destination, path, DBUS_PROPS, "GetAll", interface);
-        }
-
-        template <typename T> void set(std::string_view interface, std::string_view property, const T &value) {
-            dbus->call<void>(destination, path, DBUS_PROPS, "Set", interface, property, value);
-        }
-
-      private:
-        Properties(DBus *dbus, std::string destination, std::string path)
-            : dbus(dbus), destination(std::move(destination)), path(std::move(path)) {}
-
-        static inline constexpr std::string_view DBUS_PROPS = "org.freedesktop.DBus.Properties";
-        DBus *dbus;
-        std::string destination;
-        std::string path;
-    };
 
     DBus() {
         DBusError err;
@@ -122,10 +97,6 @@ class DBus {
         return reply;
     }
 
-    [[nodiscard]] inline Properties properties(std::string destination, std::string objectPath) {
-        return {this, std::move(destination), std::move(objectPath)};
-    }
-
     template <typename T = void, typename... ARGS>
     T call(std::string_view destination, std::string_view objectPath, std::string_view interface,
            std::string_view method, ARGS... args) {
@@ -139,6 +110,66 @@ class DBus {
   private:
     using ConnectionType = std::unique_ptr<DBusConnection, void (*)(DBusConnection *)>;
     ConnectionType conn{nullptr, dbus_connection_unref};
+};
+
+class Interface {
+  public:
+    Interface(DBus *dbus, std::string destination, std::string path)
+        : dbus(dbus), destination(std::move(destination)), path(std::move(path)) {}
+
+  protected:
+    DBus *dbus;
+    std::string destination;
+    std::string path;
+};
+
+class Properties : public Interface {
+  public:
+    using Interface::Interface;
+
+    template <typename T> [[nodiscard]] T get(std::string_view interface, std::string_view property) {
+        return std::get<T>(dbus->call<std::variant<T>>(destination, path, DBUS_PROPS, "Get", interface, property));
+    }
+
+    template <typename T> [[nodiscard]] type::Dict<type::String, T> getAll(std::string_view interface) {
+        return dbus->call<type::Dict<type::String, T>>(destination, path, DBUS_PROPS, "GetAll", interface);
+    }
+
+    template <typename T> void set(std::string_view interface, std::string_view property, const T &value) {
+        dbus->call<void>(destination, path, DBUS_PROPS, "Set", interface, property, value);
+    }
+
+  private:
+    static inline constexpr std::string_view DBUS_PROPS = "org.freedesktop.DBus.Properties";
+};
+
+class Introspectable : public Interface {
+  public:
+    using Interface::Interface;
+
+    type::String introspect() {
+        return dbus->call<std::string>(destination, path, "org.freedesktop.DBus.Introspectable", "Introspect");
+    }
+};
+
+class Peer : public Interface {
+  public:
+    using Interface::Interface;
+
+    void ping() { return dbus->call<void>(destination, path, "org.freedesktop.DBus.Peer", "Ping"); }
+    type::String getMachineId() {
+        return dbus->call<type::String>(destination, path, "org.freedesktop.DBus.Peer", "GetMachineId");
+    }
+};
+
+class ObjectManager : public Interface {
+  public:
+    using Interface::Interface;
+
+    auto getManagedObjects() {
+        using CallType = type::Dict<type::ObjectPath, type::Dict<type::String, type::Dict<type::String, type::Ignore>>>;
+        return dbus->call<CallType>(destination, path, "org.freedesktop.DBus.ObjectManager", "GetManagedObjects");
+    }
 };
 
 } // namespace v1

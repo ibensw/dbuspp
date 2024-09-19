@@ -1,5 +1,6 @@
 #pragma once
 
+// #include <any>
 #include <cstdint>
 #include <dbus-1.0/dbus/dbus.h>
 #include <map>
@@ -37,10 +38,11 @@ class ObjectPath : public std::string {
     using std::string::string;
 };
 
+template <typename... T> using Struct = std::tuple<T...>;
 template <typename... T> using Variant = std::variant<T...>;
 template <typename T> using Array = std::vector<T>;
-template <typename... T> using DictEntry = std::pair<String, Variant<T...>>;
-template <typename... T> using Dict = std::map<String, Variant<T...>>;
+template <typename Key, typename Val> using DictEntry = std::pair<Key, Val>;
+template <typename Key, typename Val> using Dict = std::map<Key, Val>;
 
 } // namespace type
 
@@ -74,7 +76,6 @@ template <typename Type, int DBUS_TYPE> struct BasicTypeParserHelper : ParserHel
         }
         Type val{};
         dbus_message_iter_get_basic(iter, &val);
-        // cout << val << endl;
         return val;
     }
 };
@@ -170,9 +171,10 @@ template <typename T> struct Parser<type::Array<T>> : ParserHelper<type::Array<T
     }
 };
 
-template <typename... TYPES> struct Parser<std::tuple<TYPES...>> {
-    using Type = std::tuple<TYPES...>;
-    static constexpr bool accept(int type) { return type == DBUS_TYPE_DICT_ENTRY || type == DBUS_TYPE_ARRAY; }
+template <typename... TYPES>
+struct Parser<type::Struct<TYPES...>> : ParserHelper<type::Struct<TYPES...>, DBUS_TYPE_STRUCT> {
+    using Type = type::Struct<TYPES...>;
+    using ParserHelper<Type, DBUS_TYPE_STRUCT>::accept;
     template <typename T, typename... REST> static auto parseInner(DBusMessageIter *iter) {
         auto first = std::make_tuple<T>(Parser<T>::parse(iter));
         if constexpr (sizeof...(REST) > 0) {
@@ -183,10 +185,10 @@ template <typename... TYPES> struct Parser<std::tuple<TYPES...>> {
         }
     }
 
-    static auto parse(DBusMessageIter *iter) {
-        // cout << "Parsing tuple" << endl;
+    static Type parse(DBusMessageIter *iter) {
+        // cout << "Parsing struct" << endl;
         if (auto type = dbus_message_iter_get_arg_type(iter); !accept(type)) {
-            throw ParseException(type, "ea");
+            throw ParseException(type, DBUS_TYPE_STRUCT);
         }
         DBusMessageIter subIter;
         dbus_message_iter_recurse(iter, &subIter);
@@ -194,19 +196,10 @@ template <typename... TYPES> struct Parser<std::tuple<TYPES...>> {
     }
 };
 
-template <typename... TYPES>
-struct Parser<type::DictEntry<TYPES...>> : ParserHelper<type::DictEntry<TYPES...>, DBUS_TYPE_DICT_ENTRY> {
-    using Type = type::DictEntry<TYPES...>;
+template <typename Key, typename Val>
+struct Parser<type::DictEntry<Key, Val>> : ParserHelper<type::DictEntry<Key, Val>, DBUS_TYPE_DICT_ENTRY> {
+    using Type = type::DictEntry<Key, Val>;
     using ParserHelper<Type, DBUS_TYPE_DICT_ENTRY>::accept;
-    template <typename T, typename... REST> static auto parseInner(DBusMessageIter *iter) {
-        auto first = std::make_tuple<T>(Parser<T>::parse(iter));
-        if constexpr (sizeof...(REST) > 0) {
-            dbus_message_iter_next(iter);
-            return std::tuple_cat(first, parseInner<REST...>(iter));
-        } else {
-            return first;
-        }
-    }
 
     static auto parse(DBusMessageIter *iter) {
         // cout << "Parsing dictentry" << endl;
@@ -222,8 +215,9 @@ struct Parser<type::DictEntry<TYPES...>> : ParserHelper<type::DictEntry<TYPES...
     }
 };
 
-template <typename... T> struct Parser<type::Dict<T...>> : ParserHelper<type::Dict<T...>, DBUS_TYPE_ARRAY> {
-    using Type = type::Dict<T...>;
+template <typename Key, typename Val>
+struct Parser<type::Dict<Key, Val>> : ParserHelper<type::Dict<Key, Val>, DBUS_TYPE_ARRAY> {
+    using Type = type::Dict<Key, Val>;
     using ParserHelper<Type, DBUS_TYPE_ARRAY>::accept;
     static Type parse(DBusMessageIter *iter) {
         // cout << "Parsing dict" << endl;
@@ -238,12 +232,60 @@ template <typename... T> struct Parser<type::Dict<T...>> : ParserHelper<type::Di
             if (type == DBUS_TYPE_INVALID) {
                 break;
             }
-            response.insert(Parser<type::DictEntry<T...>>::parse(&subIter));
+            response.insert(Parser<type::DictEntry<Key, Val>>::parse(&subIter));
             dbus_message_iter_next(&subIter);
         }
         return response;
     }
 };
+
+// template <> struct Parser<std::any> {
+//     using Type = std::any;
+//     static constexpr bool accept([[maybe_unused]] int) { return true; }
+
+//     static Type parse(DBusMessageIter *iter) {
+//         // cout << "Parsing any" << endl;
+//         auto type = dbus_message_iter_get_arg_type(iter);
+//         switch (type) {
+//             DBusMessageIter subIter;
+//             case DBUS_TYPE_BYTE:
+//                 return Parser<type::U8>::parse(iter);
+//             case DBUS_TYPE_BOOLEAN:
+//                 return Parser<type::Boolean>::parse(iter);
+//             case DBUS_TYPE_INT16:
+//                 return Parser<type::I16>::parse(iter);
+//             case DBUS_TYPE_UINT16:
+//                 return Parser<type::U16>::parse(iter);
+//             case DBUS_TYPE_INT32:
+//                 return Parser<type::I32>::parse(iter);
+//             case DBUS_TYPE_UINT32:
+//                 return Parser<type::U32>::parse(iter);
+//             case DBUS_TYPE_INT64:
+//                 return Parser<type::I64>::parse(iter);
+//             case DBUS_TYPE_UINT64:
+//                 return Parser<type::U64>::parse(iter);
+//             case DBUS_TYPE_DOUBLE:
+//                 return Parser<type::Double>::parse(iter);
+//             case DBUS_TYPE_UNIX_FD:
+//                 return Parser<type::UnixFileDescriptor>::parse(iter);
+//             case DBUS_TYPE_STRING:
+//                 return Parser<type::String>::parse(iter);
+//             case DBUS_TYPE_OBJECT_PATH:
+//                 return Parser<type::ObjectPath>::parse(iter);
+//             case DBUS_TYPE_VARIANT:
+//                 dbus_message_iter_recurse(iter, &subIter);
+//                 return Parser<std::any>::parse(&subIter);
+//             case DBUS_TYPE_DICT_ENTRY:
+//                 return Parser<type::DictEntry<std::any, std::any>>::parse(iter);
+//             case DBUS_TYPE_ARRAY:
+//             case DBUS_TYPE_STRUCT:
+//                 return Parser<type::Array<std::any>>::parse(iter);
+//             default:
+//                 throw ParseException(std::string{"No matching variant type found for "} +
+//                                      ParseException::dbusTypeToChar(type));
+//         };
+//     }
+// };
 
 } // namespace parsers
 

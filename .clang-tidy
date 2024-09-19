@@ -3,6 +3,7 @@ Checks: >
   readability-*,
   bugprone-*,
   -bugprone-easily-swappable-parameters,
+  -bugprone-exception-escape,
   performance-*,
   modernize-*,
   -modernize-use-trailing-return-type,
