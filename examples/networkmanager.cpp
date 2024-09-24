@@ -1,4 +1,4 @@
-#include "dbuspp/include/dbuspp.hpp"
+#include "wibens/dbuspp.hpp"
 #include <iostream>
 
 using namespace wibens::dbuspp;
